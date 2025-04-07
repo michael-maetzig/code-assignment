@@ -47,7 +47,24 @@ You need to setup the following CI/CD variables in GitHub
 | `AZURE_TENANT_ID`      | Azure tenant ID                  |
 | `AZURE_CREDENTIALS`    | The above credentials in a JSON  |
 
-Please set the remote backend configuration for Azure in the terraform/backend.tf before running the workflows
+### Azure Credentials JSON
+The credentials JSON should look like:
+
+{
+  "clientId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "clientSecret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "subscriptionId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "tenantId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "activeDirectoryEndpointUrl": "https://login.microsoftonline.com",
+  "resourceManagerEndpointUrl": "https://management.azure.com/",
+  "activeDirectoryGraphResourceId": "https://graph.windows.net/",
+  "sqlManagementEndpointUrl": "https://management.core.windows.net:8443/",
+  "galleryEndpointUrl": "https://gallery.azure.com/",
+  "managementEndpointUrl": "https://management.core.windows.net/"
+}
+
+### Terraform Remote Backend
+Please set the remote backend configuration for Azure in the terraform/backend.tf before running the workflows.
 
 ---
 
