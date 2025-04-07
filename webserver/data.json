@@ -1,0 +1,42 @@
+[
+    {
+        "id": "1",
+        "categoryId": "61dba35b-4f02-45c5-b648-c6badc0cbd79",
+        "categoryName": "formula-1-team",
+        "name": "Ferrari",
+        "driver1": "Lewis Hamilton",
+        "driver2": "Charles Leclerc"
+    },
+    {
+        "id": "2",
+        "categoryId": "61dba35b-4f02-45c5-b648-c6badc0cbd79",
+        "categoryName": "formula-1-team",
+        "name": "Mercedes",
+        "driver1": "George Russel",
+        "driver2": "Kimi Antonelli"
+    },
+    {
+        "id": "3",
+        "categoryId": "61dba35b-4f02-45c5-b648-c6badc0cbd79",
+        "categoryName": "formula-1-team",
+        "name": "Red Bull Racing",
+        "driver1": "Max Verstappen",
+        "driver2": "Liam Lawson"
+    },
+    {
+        "id": "4",
+        "categoryId": "61dba35b-4f02-45c5-b648-c6badc0cbd79",
+        "categoryName": "formula-1-team",
+        "name": "McLaren",
+        "driver1": "Lando Norris",
+        "driver2": "Oscar Piastri"
+    },
+    {
+        "id": "5",
+        "categoryId": "61dba35b-4f02-45c5-b648-c6badc0cbd79",
+        "categoryName": "formula-1-team",
+        "name": "Aston Martin",
+        "driver1": "Fernando Alonso",
+        "driver2": "Lance Stroll"
+    }
+]
