@@ -1,0 +1,167 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: flask-cosmos-web
+  HELM_RELEASE_NAME: flask-web
+  HELM_CHART_PATH: ./helm/flask-web
+  KEY_VAULT: codingassignmentkeyvault
+
+jobs:
+  terraform-and-docker:
+    runs-on: ubuntu-latest
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+    defaults:
+      run:
+        shell: bash
+    outputs:
+        acr_login_server: ${{ steps.tf-outputs.outputs.acr_login_server }}
+        resource_group_name: ${{ steps.tf-outputs.outputs.resource_group_name }}
+        aks_name: ${{ steps.tf-outputs.outputs.aks_name }}
+        cosmos_endpoint: ${{ steps.tf-outputs.outputs.cosmos_endpoint }}
+        cosmos_key: ${{ steps.tf-outputs.outputs.cosmos_key }}
+        cosmos_database: ${{ steps.tf-outputs.outputs.cosmos_database }}
+        cosmos_container: ${{ steps.tf-outputs.outputs.cosmos_container }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+     
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: terraform
+      
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+        working-directory: terraform
+
+      - name: Export Terraform Outputs
+        id: tf-outputs
+        run: |
+          echo "acr_login_server=$(terraform -chdir=terraform output -raw acr_login_server)" >> $GITHUB_OUTPUT
+          echo "resource_group_name=$(terraform -chdir=terraform output -raw resource_group_name)" >> $GITHUB_OUTPUT
+          echo "aks_name=$(terraform -chdir=terraform output -raw aks_name)" >> $GITHUB_OUTPUT
+          echo "cosmos_endpoint=$(terraform -chdir=terraform output -raw cosmos_endpoint)" >> $GITHUB_OUTPUT
+          echo "cosmos_key=$(terraform -chdir=terraform output -raw cosmos_key)" >> $GITHUB_OUTPUT
+          echo "cosmos_database=$(terraform -chdir=terraform output -raw cosmos_database)" >> $GITHUB_OUTPUT
+          echo "cosmos_container=$(terraform -chdir=terraform output -raw cosmos_container)" >> $GITHUB_OUTPUT
+          echo "ENDPOINT=$(terraform -chdir=terraform output -raw cosmos_endpoint)" > webserver/.env
+          echo "KEY=$(terraform -chdir=terraform output -raw cosmos_key)" >> webserver/.env
+          echo "DATABASE=$(terraform -chdir=terraform output -raw cosmos_database)" >> webserver/.env
+          echo "CONTAINER=$(terraform -chdir=terraform output -raw cosmos_container)" >> webserver/.env
+          echo "Contents of .env file:"
+          cat webserver/.env
+
+      - name: Debug Terraform Outputs
+        run: |
+          echo "acr_login_server=${{ steps.tf-outputs.outputs.acr_login_server }}"
+          echo "resource_group_name=${{ steps.tf-outputs.outputs.resource_group_name }}"
+          echo "aks_name=${{ steps.tf-outputs.outputs.aks_name }}"
+          echo "cosmos_endpoint=${{ steps.tf-outputs.outputs.cosmos_endpoint }}"
+          echo "cosmos_key=${{ steps.tf-outputs.outputs.cosmos_key }}"
+          echo "cosmos_database=${{ steps.tf-outputs.outputs.cosmos_database }}"
+          echo "cosmos_container=${{ steps.tf-outputs.outputs.cosmos_container }}"
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Log in to ACR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ steps.tf-outputs.outputs.acr_login_server }}
+          username: ${{ secrets.AZURE_CLIENT_ID }}
+          password: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v6.15.0
+        with:
+          context: webserver
+          push: true
+          tags: ${{ steps.tf-outputs.outputs.acr_login_server }}/${{ env.IMAGE_NAME }}:latest, ${{ steps.tf-outputs.outputs.acr_login_server }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+  helm-run:
+    runs-on: ubuntu-latest
+    needs: terraform-and-docker
+    env:
+      acr_login_server: ${{ needs.terraform-and-docker.outputs.acr_login_server }}
+      resource_group_name: ${{ needs.terraform-and-docker.outputs.resource_group_name }}
+      aks_name: ${{ needs.terraform-and-docker.outputs.aks_name }}
+      cosmos_endpoint: ${{ needs.terraform-and-docker.outputs.cosmos_endpoint }}
+      cosmos_key: ${{ needs.terraform-and-docker.outputs.cosmos_key }}
+      cosmos_database: ${{ needs.terraform-and-docker.outputs.cosmos_database }}
+      cosmos_container: ${{ needs.terraform-and-docker.outputs.cosmos_container }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Get AKS Credentials
+        run: az aks get-credentials --resource-group ${{ env.resource_group_name }} --name ${{ env.aks_name }} --overwrite-existing
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: v3.12.0
+
+      - name: Ensure Helm Chart Exists
+        run: |
+          if [ ! -f "${{ env.HELM_CHART_PATH }}/Chart.yaml" ]; then
+            echo "Creating Helm chart..."
+            helm create ${{ env.HELM_CHART_PATH }}
+            rm -f ${{ env.HELM_CHART_PATH }}/templates/tests/*
+          else
+            echo "Helm chart found at ${{ env.HELM_CHART_PATH }}"
+          fi
+
+      - name: Deploy with Helm
+        run: |
+          echo "Updating Helm dependencies..."
+          helm dependency update ${{ env.HELM_CHART_PATH }}
+          helm upgrade --install ${{ env.HELM_RELEASE_NAME }} ${{ env.HELM_CHART_PATH }} \
+            --set image.repository=${{ env.acr_login_server }}/${{ env.IMAGE_NAME }} \
+            --set image.tag=${{ github.sha }} \
+            --set image.pullPolicy=Always \
+            --set service.type=LoadBalancer \
+            --set service.port=80
+
+      - name: Wait for LoadBalancer IP
+        run: |
+          echo "Waiting for external IP..."
+          for i in {1..20}; do
+            IP=$(kubectl get svc ${{ env.HELM_RELEASE_NAME }} -o jsonpath="{.status.loadBalancer.ingress[0].ip}")
+            if [ -n "$IP" ]; then
+              echo "Your app is available at: http://$IP"
+              exit 0
+            fi
+            echo "[$i/20] Still waiting..."
+            sleep 10
+          done
+          echo "Timeout: No external IP assigned"
+          exit 1
+
+      - name: debugging
+        run: |
+          helm status flask-web
+          echo "Fetching deployment logs..."
+          kubectl logs deployment/${{ env.HELM_RELEASE_NAME }}
