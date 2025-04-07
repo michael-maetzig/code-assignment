@@ -93,8 +93,11 @@ Some initial errors might occur due to missing permissions for specific roles or
 
 ## Example Requests
 
-### POST (using Windows PowerShell terminal):
+### POST
+#### Bash
 curl.exe -X POST http://URL/data -H "Content-Type: application/json" -d "{\"id\": \"6\", \"categoryName\": \"formula-1-team\", \"name\": \"Williams\", \"driver1\": \"Carlos Sainz\", \"driver2\": \"Alexander Albon\"}"
+#### Windows PowerShell
+Invoke-RestMethod -Uri "http://132.164.1.130:80/data" -Method Post -ContentType "application/json" -Body '{"id": "20", "categoryName": "formula-1-team", "name": "Racing Bulls", "driver1": "Yuki Tsunoda", "driver2": "Isack Hadjar"}'
 
 ### GET
 http://URL/data
